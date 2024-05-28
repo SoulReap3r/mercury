@@ -121,10 +121,54 @@ def main():
         except subprocess.CalledProcessError as e:
             print(f"Error exporting NFS shares: {e}")
 
-    # Client-side setup logic (unchanged)
-    # ... (client-side code using server_ip, share_name, mount_point)
+    else:
+        share_name = input("Enter the share name to mount (default: shared_data): ") or "shared_data"
+        mount_point = input("Enter the directory to mount the share (e.g., /mnt/nfs): ")
 
+        # Check if NFS utilities are installed
+        try:
+            subprocess.run(["which", "mount.nfs"], check=True)
+            subprocess.run(["which", "showmount"], check=True)
+        except subprocess.CalledProcessError:
+            print("Error: NFS utilities not found. Please install them (e.g., sudo apt install nfs-common).")
+            return
 
-if __name__ == "__main__":
-    import sys
-    main()
+        # Check if the NFS server is exporting the specified share
+        try:
+            result = subprocess.run(
+                ["showmount", "-e", server_ip], capture_output=True, text=True
+            )
+            if share_name not in result.stdout:
+                print(f"Error: Share '{share_name}' not found on server.")
+                return
+        except subprocess.CalledProcessError:
+            print("Error: Unable to communicate with NFS server.")
+            return
+
+        # Create the mount point directory if it doesn't exist
+        try:
+            os.makedirs(mount_point, exist_ok=True)
+        except OSError as e:
+            print(f"Error creating mount point directory: {e}")
+            return
+
+        # Mount the NFS share
+        try:
+            subprocess.run(["sudo", "mount", f"{server_ip}:{share_name}", mount_point], check=True)
+            print("NFS share mounted successfully!")
+        except subprocess.CalledProcessError as e:
+            print(f"Error mounting NFS share: {e}")
+
+        # Option for automounting at boot (you can customize this part)
+        automount_choice = input("Do you want to mount the share automatically at boot (y/n)? ").lower()
+        if automount_choice == "y":
+            try:
+                with open("/etc/fstab", "a") as fstab:
+                    fstab.write(f"{server_ip}:{share_name} {mount_point} nfs defaults 0 0\n")
+                print("Added entry to /etc/fstab for automounting.")
+            except PermissionError:
+                print("Error: Insufficient permissions to edit /etc/fstab. Run the script with sudo.")
+
+    if __name__ == "__main__":
+        import sys
+        main()
