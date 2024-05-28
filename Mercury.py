@@ -1,4 +1,3 @@
-Python
 #!/usr/bin/env python3
 
 import os
@@ -6,6 +5,7 @@ import pwd
 import grp
 import subprocess
 import argparse
+import sys
 
 def main():
     # Handle help option and display usage information
@@ -30,7 +30,7 @@ def main():
     # Print Network File System (NFS) title in ASCII art
     print("""
         .---.        .----.        .----.
-       / _ \        |  __ \        |  __ \
+       / _ \        |  __ \        |  __ \\
       | | | |_   _  | |__) |_   _  | |__) |
       | |_| / | | | |  ___/ | | | | |  ___/
        \___/  |_| | | |     | |_| | | |
@@ -55,17 +55,18 @@ def main():
 
     # Get server IP (automatic or manual)
     use_auto_ip = input("Use automatic server IP detection (y/n) [default: y]: ").lower()
-    if use_auto_ip not in ("y", "n"):
+    if use_auto_ip not in ("y", "n", ""):
+        print("Invalid input. Using default (y).")
         use_auto_ip = "y"
 
-    if use_auto_ip == "y":
-        server_ip = subprocess.check_output(["hostname", "-I"]).decode().strip().split()[0]
+    if use_auto_ip in ("y", ""):
+        server_ip = "192.168.8.175"
     else:
         server_ip = input("Enter the server's IP address: ")
 
     # Initialize share name and mount point
     share_name = ""
-    mount_point = ""
+    mount_point = "/srv/File_Share_Mark"
 
     # Server-side setup
     if args.server:
@@ -107,7 +108,7 @@ def main():
             permissions = "755"
 
         # Construct and write the export line to /etc/exports
-        export_line = f"{share_path} *(rw,sync,no_subtree_check,owner={uid}:{gid},mode={permissions})"
+        export_line = f"{share_path} *(rw,sync,no_subtree_check,fsid=0,crossmnt)"
         try:
             with open("/etc/exports", "a") as f:
                 f.write(export_line + "\n")
@@ -117,13 +118,12 @@ def main():
 
         # Restart NFS server
         try:
-            subprocess.run(["sudo", "exportfs", "-ra"])
+            subprocess.run(["sudo", "exportfs", "-ra"], check=True)
         except subprocess.CalledProcessError as e:
             print(f"Error exporting NFS shares: {e}")
 
     else:
         share_name = input("Enter the share name to mount (default: shared_data): ") or "shared_data"
-        mount_point = input("Enter the directory to mount the share (e.g., /mnt/nfs): ")
 
         # Check if NFS utilities are installed
         try:
@@ -154,7 +154,7 @@ def main():
 
         # Mount the NFS share
         try:
-            subprocess.run(["sudo", "mount", f"{server_ip}:{share_name}", mount_point], check=True)
+            subprocess.run(["sudo", "mount", "-t", "nfs4", f"{server_ip}:/{share_name}", mount_point], check=True)
             print("NFS share mounted successfully!")
         except subprocess.CalledProcessError as e:
             print(f"Error mounting NFS share: {e}")
@@ -164,11 +164,10 @@ def main():
         if automount_choice == "y":
             try:
                 with open("/etc/fstab", "a") as fstab:
-                    fstab.write(f"{server_ip}:{share_name} {mount_point} nfs defaults 0 0\n")
+                    fstab.write(f"{server_ip}:/{share_name} {mount_point} nfs4 defaults 0 0\n")
                 print("Added entry to /etc/fstab for automounting.")
             except PermissionError:
                 print("Error: Insufficient permissions to edit /etc/fstab. Run the script with sudo.")
 
-    if __name__ == "__main__":
-        import sys
-        main()
+if __name__ == "__main__":
+    main()
